@@ -1,0 +1,7 @@
+[package]
+name = "bf-interpreter"
+version = "0.1.0"
+authors = ["LazyShpee <comemureravaud@gmail.com>"]
+
+[dependencies]
+argparse = "0.2.1"
