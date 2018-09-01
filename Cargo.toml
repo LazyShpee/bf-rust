@@ -4,4 +4,5 @@ version = "0.1.0"
 authors = ["LazyShpee <comemureravaud@gmail.com>"]
 
 [dependencies]
+colored = "1.6.1"
 argparse = "0.2.1"

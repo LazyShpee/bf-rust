@@ -11,14 +11,16 @@ sh $ ./bf-interpreter --help
 Usage:
     ./bf-interpreter [OPTIONS] [FILENAME]
 
-Simple brainfuck interpreter. If no filename or code given, reads it from stdin.
+Simple brainfuck interpreter. If no filename or code given, reads it from
+stdin.
 
 positional arguments:
   filename              Filename to read bf from
 
 optional arguments:
   -h,--help             show this help message and exit
-  -d,--dump             Print memory at the end
+  --color               Color stuff on ANSI terminals
+  -D,--dump             Print memory at the end
   -e,--eval EVAL        Eval given brainfuck code
   -v,--verbose          Say everything you do
 ```
