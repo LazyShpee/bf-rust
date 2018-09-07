@@ -11,6 +11,7 @@ pub struct Options {
     pub tape_length: usize,
     pub filename: Option<String>,
     pub code: Option<String>,
+    pub extend: u8,
 }
 
 #[derive(Default)]
@@ -23,16 +24,15 @@ pub struct VM {
 
     data_start: usize,
     code_start: usize,
+
+    running: bool,
+    extend: u8,
 }
 
-enum ChangeMode {
-    Add(usize),
-    Sub(usize),
-    Set(usize),
-}
-
-pub enum DumpMode {
-    Hex,
+enum ChangeMode<T> {
+    Add(T),
+    Sub(T),
+    Set(T),
 }
 
 impl VM {
@@ -51,6 +51,9 @@ impl VM {
                 code
             },
 
+            running: true,
+            extend: options.extend,
+
             ..Default::default()
         };
         vm.tape.push(0); // Storage
@@ -63,19 +66,21 @@ impl VM {
         vm.data_ptr = vm.data_start;
         vm.tape.extend(vec![0u8; options.tape_length]);
 
+        if options.verbose { println!("Created VM type {} with code {}", vm.extend, String::from_utf8(vm.tape[vm.code_start..vm.data_start - 1].to_vec()).unwrap_or("INVALID CODE".to_string())) }
+
         vm
     }
 
-    fn tape_change(&mut self, mode: ChangeMode) {
+    fn tape_change(&mut self, mode: ChangeMode<u8>) {
         match mode {
-            ChangeMode::Add(value) => self.tape[self.data_ptr] = self.tape[self.data_ptr].wrapping_add(value as u8),
-            ChangeMode::Sub(value) => self.tape[self.data_ptr] = self.tape[self.data_ptr].wrapping_sub(value as u8),
-            ChangeMode::Set(value) => self.tape[self.data_ptr] = value as u8,
+            ChangeMode::Add(value) => self.tape[self.data_ptr] = self.tape[self.data_ptr].wrapping_add(value),
+            ChangeMode::Sub(value) => self.tape[self.data_ptr] = self.tape[self.data_ptr].wrapping_sub(value),
+            ChangeMode::Set(value) => self.tape[self.data_ptr] = value,
         }
     }
 
-    fn data_ptr_change(&mut self, mode: ChangeMode) {
-        // Tape is writable from lower to upper, will change with -x2 and -x3
+    fn data_ptr_change(&mut self, mode: ChangeMode<usize>) {
+        // Tape is writable from lower to upper, will change with --x2 and --x3
         let lower = self.data_start;
         let upper = self.tape.len() - 1;
 
@@ -98,7 +103,74 @@ impl VM {
         }
     }
 
-    pub fn dump(&self, _mode: DumpMode, colors: bool) {
+    pub fn run(&mut self) {
+        while self.running && self.code_ptr < self.tape.len() {
+            match self.tape[self.code_ptr] as char {
+                '+' => self.tape_change(ChangeMode::Add(1)),
+                '-' => self.tape_change(ChangeMode::Sub(1)),
+                '>' => self.data_ptr_change(ChangeMode::Add(1)),
+                '<' => self.data_ptr_change(ChangeMode::Sub(1)),
+                '.' => { stdout().write(&[self.tape[self.data_ptr]]).expect("Could not write to stdout"); () },
+                ',' => {
+                    let mut buffer: [u8; 1] = [0; 1];
+
+                    stdin().read(&mut buffer[..]).expect("Could not read from stdin");
+                    self.tape_change(ChangeMode::Set(if buffer[0] == b'\n' { 0 } else { buffer[0] }));
+                },
+                '[' => {
+                    if self.tape[self.data_ptr] == 0 {
+                        let mut count: usize = 1;
+                        while count > 0 {
+                            self.code_ptr += 1;
+                            match self.tape[self.code_ptr] as char {
+                                '[' => count += 1,
+                                ']' => count -= 1,
+                                _ => (),
+                            }
+                        }
+                    }
+                },
+                ']' => {
+                    if self.tape[self.data_ptr] != 0 {
+                        let mut count: usize = 1;
+                        while count > 0 {
+                            self.code_ptr -= 1;
+                            match self.tape[self.code_ptr] as char {
+                                '[' => count -= 1,
+                                ']' => count += 1,
+                                _ => (),
+                            }
+                        }
+                    }
+                },
+                _ => (),
+            }
+
+            if self.extend >= 1 {
+                match self.tape[self.code_ptr] as char {
+                    '@' => self.running = false,
+                    '$' => self.tape[0] = self.tape[self.data_ptr],
+                    '!' => { let n = self.tape[0]; self.tape_change(ChangeMode::Set(n)) },
+                    '{' => { let n = self.tape[self.data_ptr] << 1; self.tape_change(ChangeMode::Set(n)) },
+                    '}' => { let n = self.tape[self.data_ptr] >> 1; self.tape_change(ChangeMode::Set(n)) },
+                    '~' => { let n = !self.tape[self.data_ptr]; self.tape_change(ChangeMode::Set(n)) },
+                    '^' => { let n = self.tape[self.data_ptr] ^ self.tape[0]; self.tape_change(ChangeMode::Set(n)) },
+                    '&' => { let n = self.tape[self.data_ptr] & self.tape[0]; self.tape_change(ChangeMode::Set(n)) },
+                    '|' => { let n = self.tape[self.data_ptr] | self.tape[0]; self.tape_change(ChangeMode::Set(n)) },
+                    _ => (),
+                }
+            } else {
+                self.running = self.code_ptr < self.data_start - 1;
+            }
+
+            self.code_ptr += 1;
+        }
+    }
+
+    /**
+     * This just dumps the current memory (storage, code and memory tape)
+     */
+    pub fn dump(&self, colors: bool) {
         for ptr in (0..self.tape.len() - 1).step_by(16) {
             let to = cmp::min(ptr + 16, self.tape.len() - 1);
             print!("{:08X} ", ptr);
@@ -157,53 +229,6 @@ impl VM {
             print!("|");
 
             println!();
-        }
-    }
-
-    pub fn run(&mut self) {
-        while self.code_ptr < self.data_start {
-            match self.tape[self.code_ptr] {
-                b'+' => self.tape_change(ChangeMode::Add(1)),
-                b'-' => self.tape_change(ChangeMode::Sub(1)),
-                b'>' => self.data_ptr_change(ChangeMode::Add(1)),
-                b'<' => self.data_ptr_change(ChangeMode::Sub(1)),
-                b'.' => { stdout().write(&[self.tape[self.data_ptr]]).expect("Could not write to stdout"); () },
-                b',' => {
-                    let mut buffer: [u8; 1] = [0; 1];
-
-                    stdin().read(&mut buffer[..]).expect("Could not read from stdin");
-                    self.tape_change(ChangeMode::Set(if buffer[0] == b'\n' { 0 } else { buffer[0] } as usize));
-                },
-                b'[' => {
-                    if self.tape[self.data_ptr] == 0 {
-                        let mut count: usize = 1;
-                        while count > 0 && self.code_ptr < self.data_start - 1 {
-                            self.code_ptr += 1;
-                            match self.tape[self.code_ptr] {
-                                b'[' => count += 1,
-                                b']' => count -= 1,
-                                _ => (),
-                            }
-                        }
-                    }
-                },
-                b']' => {
-                    if self.tape[self.data_ptr] != 0 {
-                        let mut count: usize = 1;
-                        while count > 0 && self.code_start < self.code_ptr {
-                            self.code_ptr -= 1;
-                            match self.tape[self.code_ptr] {
-                                b'[' => count -= 1,
-                                b']' => count += 1,
-                                _ => (),
-                            }
-                        }
-                    }
-                },
-                _ => (),
-            }
-
-            self.code_ptr += 1;
         }
     }
 }

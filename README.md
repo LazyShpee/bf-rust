@@ -4,7 +4,7 @@ A small brainf*ck interpreter to get me into rustlang, I plan to improve this in
 
 ## Usage
 
-Be aware that the given code must be clean, meaning every [ has a matching ]
+Be aware that the given code must be clean, meaning every [ has a matching ] and no argument checking is being done yet.
 
 ```
 sh $ ./bf-interpreter --help
@@ -23,4 +23,6 @@ optional arguments:
   -D,--dump             Print memory at the end
   -e,--eval EVAL        Eval given brainfuck code
   -v,--verbose          Say everything you do
+  -x                    Enables Extended Type I to III (1-3) features
+  -s,--size SIZE        Changes the memory tape size, defaults to 1000
 ```
